@@ -97,6 +97,9 @@ class UpdateApp(QMainWindow):
             application_path = os.path.dirname(os.path.abspath(__file__))
         
         icon_path = os.path.join(application_path, 'maa.png')
+        print(f"Icon path: {icon_path}")
+        print(f"Icon file exists: {os.path.exists(icon_path)}")
+        
         self.setWindowIcon(QIcon(icon_path))
 
         self.init_ui()
@@ -266,8 +269,17 @@ class UpdateApp(QMainWindow):
         self.start_button.setEnabled(True)
 
     def setup_tray(self):
+        if getattr(sys, 'frozen', False):
+            base_path = sys._MEIPASS
+        else:
+            base_path = os.path.dirname(os.path.abspath(__file__))
+        
+        icon_path = os.path.join(base_path, 'maa.png')
+        print(f"Tray icon path: {icon_path}")
+        print(f"Tray icon file exists: {os.path.exists(icon_path)}")
+        
         self.tray_icon = QSystemTrayIcon(self)
-        self.tray_icon.setIcon(QIcon('maa.png'))
+        self.tray_icon.setIcon(QIcon(icon_path))
         
         tray_menu = QMenu()
         show_action = QAction("显示UI", self)
@@ -297,7 +309,16 @@ class UpdateApp(QMainWindow):
         QApplication.quit()
 
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    window = UpdateApp()
-    window.show()
-    sys.exit(app.exec())
+    try:
+        app = QApplication(sys.argv)
+        if not QSystemTrayIcon.isSystemTrayAvailable():
+            QMessageBox.critical(None, "系统托盘", "无法检测到系统托盘。")
+            sys.exit(1)
+        
+        QApplication.setQuitOnLastWindowClosed(False)
+        window = UpdateApp()
+        window.show()
+        sys.exit(app.exec())
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        input("Press Enter to exit...")
