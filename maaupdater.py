@@ -5,9 +5,9 @@ import urllib.request
 import zipfile
 import tempfile
 from PySide6.QtWidgets import (QApplication, QMainWindow, QPushButton, QVBoxLayout, QWidget, 
-                               QProgressBar, QLabel, QFileDialog, QCheckBox, QComboBox, 
-                               QSystemTrayIcon, QMenu, QMessageBox)
-from PySide6.QtCore import QThread, Signal, Qt, QTimer
+                               QProgressBar, QLabel, QFileDialog, QComboBox, 
+                               QSystemTrayIcon, QMenu, QMessageBox, QSpacerItem, QSizePolicy)
+from PySide6.QtCore import QThread, Signal, Qt, QTimer, QSharedMemory
 from PySide6.QtGui import QIcon, QAction
 
 CONFIG_FILE = 'update_config.ini'
@@ -89,7 +89,7 @@ class UpdateApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("MAA资源更新器")
-        self.setGeometry(100, 100, 400, 250)
+        self.setGeometry(100, 100, 400, 300)  # 增加窗口高度
         
         if getattr(sys, 'frozen', False):
             application_path = sys._MEIPASS
@@ -97,9 +97,6 @@ class UpdateApp(QMainWindow):
             application_path = os.path.dirname(os.path.abspath(__file__))
         
         icon_path = os.path.join(application_path, 'maa.png')
-        print(f"Icon path: {icon_path}")
-        print(f"Icon file exists: {os.path.exists(icon_path)}")
-        
         self.setWindowIcon(QIcon(icon_path))
 
         self.init_ui()
@@ -114,6 +111,7 @@ class UpdateApp(QMainWindow):
 
     def init_ui(self):
         layout = QVBoxLayout()
+        layout.setSpacing(10)  # 设置控件之间的间距
 
         self.download_progress = QProgressBar()
         layout.addWidget(self.download_progress)
@@ -125,22 +123,27 @@ class UpdateApp(QMainWindow):
         self.status_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.status_label)
 
+        # 添加一个弹性空间
+        layout.addItem(QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding))
+
         self.check_update_button = QPushButton("检查更新")
         self.check_update_button.clicked.connect(self.check_update)
+        self.check_update_button.setMinimumHeight(40)  # 设置按钮最小高度
         layout.addWidget(self.check_update_button)
 
         self.start_button = QPushButton("开始更新")
         self.start_button.clicked.connect(self.start_update)
+        self.start_button.setMinimumHeight(40)  # 设置按钮最小高度
         layout.addWidget(self.start_button)
-
-        self.autostart_checkbox = QCheckBox("开机自启动")
-        self.autostart_checkbox.stateChanged.connect(self.toggle_autostart)
-        layout.addWidget(self.autostart_checkbox)
 
         self.check_interval_combo = QComboBox()
         self.check_interval_combo.addItems(["不自动检查更新", "每小时检测更新", "每天检测更新", "每周检测更新"])
         self.check_interval_combo.currentIndexChanged.connect(self.set_check_interval)
+        self.check_interval_combo.setMinimumHeight(30)  # 设置下拉框最小高度
         layout.addWidget(self.check_interval_combo)
+
+        # 添加另一个弹性空间
+        layout.addItem(QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding))
 
         central_widget = QWidget()
         central_widget.setLayout(layout)
@@ -158,27 +161,19 @@ class UpdateApp(QMainWindow):
         config = configparser.ConfigParser()
         if os.path.exists(CONFIG_FILE):
             config.read(CONFIG_FILE)
-            autostart = config.getboolean('Settings', 'autostart', fallback=False)
             check_interval = config.get('Settings', 'check_interval', fallback="不自动检查")
-            self.autostart_checkbox.setChecked(autostart)
             self.check_interval_combo.setCurrentText(check_interval)
         else:
-            self.autostart_checkbox.setChecked(False)
             self.check_interval_combo.setCurrentText("不自动检查")
 
     def save_settings(self):
         config = configparser.ConfigParser()
         config['Settings'] = {
             'maa_directory': str(load_config() or ''),
-            'autostart': str(self.autostart_checkbox.isChecked()),
             'check_interval': str(self.check_interval_combo.currentText())
         }
         with open(CONFIG_FILE, 'w') as configfile:
             config.write(configfile)
-
-    def toggle_autostart(self, state):
-        # 实现开机自启动的逻辑
-        self.save_settings()
 
     def set_check_interval(self, index):
         self.save_settings()
@@ -275,22 +270,17 @@ class UpdateApp(QMainWindow):
             base_path = os.path.dirname(os.path.abspath(__file__))
         
         icon_path = os.path.join(base_path, 'maa.png')
-        print(f"Tray icon path: {icon_path}")
-        print(f"Tray icon file exists: {os.path.exists(icon_path)}")
         
         self.tray_icon = QSystemTrayIcon(self)
         self.tray_icon.setIcon(QIcon(icon_path))
         
         tray_menu = QMenu()
         show_action = QAction("显示UI", self)
-        quit_action = QAction("退出程序", self)
-        
+        quit_action = QAction("退出", self)
         show_action.triggered.connect(self.show)
-        quit_action.triggered.connect(self.quit_app)
-        
+        quit_action.triggered.connect(QApplication.instance().quit)
         tray_menu.addAction(show_action)
         tray_menu.addAction(quit_action)
-        
         self.tray_icon.setContextMenu(tray_menu)
         self.tray_icon.show()
 
@@ -299,26 +289,39 @@ class UpdateApp(QMainWindow):
         self.hide()
         self.tray_icon.showMessage(
             "MAA资源更新器",
-            "程序已最小化到系统托盘，右键点击图标可以显示主界面或退出程序。",
+            "程序已最小化到系统托盘，双击图标可以重新打开主窗口。",
             QSystemTrayIcon.Information,
             2000
         )
 
-    def quit_app(self):
-        self.tray_icon.hide()
-        QApplication.quit()
+class SingleApplication(QApplication):
+    def __init__(self, id, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._id = id
+        self._activation_window = None
+        self._memory = QSharedMemory(self)
+        self._memory.setKey(self._id)
+        if self._memory.attach():
+            self._running = True
+        else:
+            self._running = False
+            if not self._memory.create(1):
+                raise RuntimeError(self._memory.errorString())
+
+    def is_running(self):
+        return self._running
 
 if __name__ == "__main__":
-    try:
-        app = QApplication(sys.argv)
-        if not QSystemTrayIcon.isSystemTrayAvailable():
-            QMessageBox.critical(None, "系统托盘", "无法检测到系统托盘。")
-            sys.exit(1)
-        
-        QApplication.setQuitOnLastWindowClosed(False)
-        window = UpdateApp()
-        window.show()
-        sys.exit(app.exec())
-    except Exception as e:
-        print(f"An error occurred: {e}")
-        input("Press Enter to exit...")
+    app = SingleApplication('MAAResourceUpdater', sys.argv)
+    if app.is_running():
+        QMessageBox.warning(None, "警告", "MAA资源更新器已经在运行中。")
+        sys.exit(1)
+
+    if not QSystemTrayIcon.isSystemTrayAvailable():
+        QMessageBox.critical(None, "系统托盘", "无法检测到系统托盘。")
+        sys.exit(1)
+    
+    QApplication.setQuitOnLastWindowClosed(False)
+    window = UpdateApp()
+    window.show()
+    sys.exit(app.exec())
