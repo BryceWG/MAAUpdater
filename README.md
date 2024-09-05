@@ -1,5 +1,8 @@
 # MAA资源更新器
 MAA资源更新器是一个用于更新 MaaAssistantArknights（MAA）资源文件的工具。它提供了图形界面，可以自动下载并安装最新的MAA资源。
+UI截图：
+![Clip_2024-09-05_23-38-50](https://github.com/user-attachments/assets/1ca33505-f5ed-4c42-b697-7ec3d144bfee)
+
 ## 注意
 1. 本人Python打包不是很熟练，exe文件体积比较大，有能力的可以自己打包喔~
 2. 提供mini版exe文件，体积小，但是没有UI界面，没有自动检查更新等功能。
